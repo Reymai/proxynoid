@@ -3,10 +3,9 @@
 
 require 'net/http'
 require 'uri'
+require_relative 'errors'
 
 module Proxy
-  class ResponseSizeError < StandardError; end unless const_defined?(:ResponseSizeError)
-
   class Forwarder
     def initialize(config)
       @config = config

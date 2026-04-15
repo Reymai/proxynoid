@@ -84,11 +84,13 @@ module Proxy
       payload.values.any? { |value| resource_ids.include?(value) }
     end
 
-    def deep_merge(left, right)
+    def deep_merge(left, right, path = [])
+      return left & right if path.last == 'whitelist' && left.is_a?(Array) && right.is_a?(Array)
+
       return right unless left.is_a?(Hash) && right.is_a?(Hash)
 
-      left.merge(right) do |_, old_val, new_val|
-        deep_merge(old_val, new_val)
+      left.merge(right) do |key, old_val, new_val|
+        deep_merge(old_val, new_val, path + [key])
       end
     end
   end

@@ -12,21 +12,21 @@ module Proxy
     end
 
     def authenticate(env)
-      key_id = find_key_id(env)
+      request = Rack::Request.new(env)
+      token = request.get_header('HTTP_X_PROXY_TOKEN')&.strip
+      key_id = find_key_id(token)
       source_ip = extract_source_ip(env)
 
       raise AuthenticationError, 'IP not allowed' unless source_ip_allowed?(source_ip)
-
-      raise AuthenticationError, 'Missing X-Proxy-Token' unless key_id
+      raise AuthenticationError, 'Missing X-Proxy-Token' if token.nil? || token.empty?
+      raise AuthenticationError, 'Invalid token' unless key_id
 
       key_id
     end
 
     private
 
-    def find_key_id(env)
-      request = Rack::Request.new(env)
-      token = request.get_header('HTTP_X_PROXY_TOKEN')&.strip
+    def find_key_id(token)
       return nil if token.nil? || token.empty?
 
       @config.proxy_keys.each do |id, secret|

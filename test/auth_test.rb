@@ -35,4 +35,11 @@ class AuthTest < Minitest::Test
     env = { 'HTTP_X_PROXY_TOKEN' => 'secret-token', 'REMOTE_ADDR' => '198.51.100.10' }
     assert_raises(Proxy::AuthenticationError) { @auth.authenticate(env) }
   end
+
+  def test_rejects_invalid_token
+    env = { 'HTTP_X_PROXY_TOKEN' => 'bad-token', 'REMOTE_ADDR' => '203.0.113.5' }
+
+    error = assert_raises(Proxy::AuthenticationError) { @auth.authenticate(env) }
+    assert_equal('Invalid token', error.message)
+  end
 end

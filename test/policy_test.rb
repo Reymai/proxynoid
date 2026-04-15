@@ -23,7 +23,7 @@ class PolicyTest < Minitest::Test
   def test_authorizes_get_envs_with_rule_specific_transforms
     result = @policy.authorize('deploy_pipeline', 'GET', '/v2/apps/abc-123-staging-id/envs')
     refute_nil(result)
-    assert_equal(%w[todo], result[:transforms]['response']['mask_values']['whitelist'])
+    assert_equal([], result[:transforms]['response']['mask_values']['whitelist'])
   end
 
   def test_rejects_templates_without_leading_slash
@@ -64,5 +64,39 @@ class PolicyTest < Minitest::Test
     assert_nil policy.authorize('deploy_pipeline', 'GET', '/v2/apps/abc')
   ensure
     file&.unlink
+  end
+
+  def test_intersects_key_and_endpoint_whitelists
+    raw = {
+      'keys' => {
+        'test_pipeline' => {
+          'transforms' => {
+            'response' => {
+              'mask_values' => {
+                'whitelist' => %w[production staging]
+              }
+            }
+          },
+          'allowed' => [
+            {
+              'method' => 'GET',
+              'path' => '/v2/apps/:app_id/envs',
+              'transforms' => {
+                'response' => {
+                  'mask_values' => {
+                    'whitelist' => ['production']
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+
+    policy = Proxy::Policy.new(raw)
+    result = policy.authorize('test_pipeline', 'GET', '/v2/apps/abc/envs')
+
+    assert_equal(['production'], result[:transforms]['response']['mask_values']['whitelist'])
   end
 end

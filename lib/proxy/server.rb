@@ -33,6 +33,8 @@ module Proxy
       end
     end
 
+    private
+
     def handle_request(request, payload, started_at)
       key_id = authenticate_request(request)
       policy_result = authorize_request(key_id, request)
@@ -88,8 +90,6 @@ module Proxy
         path: request.path
       }
     end
-
-    private
 
     def forbidden_response
       [403, { 'Content-Type' => 'application/json' }, [{ error: 'Forbidden' }.to_json]]

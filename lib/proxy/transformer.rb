@@ -2,10 +2,9 @@
 # frozen_string_literal: true
 
 require 'json'
+require_relative 'errors'
 
 module Proxy
-  class ResponseSizeError < StandardError; end unless const_defined?(:ResponseSizeError)
-
   class Transformer
     FILTERED_VALUE = '[FILTERED]'
 
