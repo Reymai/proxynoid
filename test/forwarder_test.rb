@@ -5,8 +5,8 @@ require_relative 'test_helper'
 class ForwarderTest < Minitest::Test
   def setup
     WebMock.disable_net_connect!(allow_localhost: true)
-    config_struct = Struct.new(:do_api_token, :upstream_timeout)
-    @config = config_struct.new('do-token', 10)
+    config_struct = Struct.new(:do_api_token, :upstream_timeout, :max_payload_mb)
+    @config = config_struct.new('do-token', 10, 1)
     @forwarder = Proxy::Forwarder.new(@config)
   end
 
@@ -34,5 +34,17 @@ class ForwarderTest < Minitest::Test
     assert_equal 201, status
     assert_equal({ 'content-type' => 'application/json' }, headers)
     assert_equal({ 'success' => true }.to_json, body)
+  end
+
+  def test_rejects_upstream_payloads_over_max_size
+    stub_request(:get, 'https://api.digitalocean.com/v2/apps/abc/deployments')
+      .to_return(status: 200,
+                 body: 'x' * (2 * 1024 * 1024),
+                 headers: { 'Content-Type' => 'application/json', 'Content-Length' => (2 * 1024 * 1024).to_s })
+
+    env = Rack::MockRequest.env_for('/v2/apps/abc/deployments', method: 'GET')
+    request = Rack::Request.new(env)
+
+    assert_raises(Proxy::ResponseSizeError) { @forwarder.forward(request) }
   end
 end

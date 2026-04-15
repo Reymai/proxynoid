@@ -31,6 +31,15 @@ class GithubIpsTest < Minitest::Test
     refute ips.include?('192.30.252.1')
   end
 
+  def test_retries_github_meta_fetch_when_transient_errors_occur
+    stub_request(:get, 'https://api.github.com/meta')
+      .to_return({ status: 503 }, { status: 503 }, { status: 200, body: { actions: ['192.30.252.0/22'] }.to_json })
+
+    ips = Proxy::GithubIps.new(['203.0.113.0/24'])
+
+    assert ips.include?('192.30.252.1')
+  end
+
   def test_raises_when_initial_fetch_fails_and_no_static_ranges
     stub_request(:get, 'https://api.github.com/meta').to_return(status: 500)
 

@@ -4,6 +4,8 @@
 require 'json'
 
 module Proxy
+  class ResponseSizeError < StandardError; end unless const_defined?(:ResponseSizeError)
+
   class Transformer
     FILTERED_VALUE = '[FILTERED]'
 

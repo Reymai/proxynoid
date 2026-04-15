@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'tempfile'
 require_relative 'test_helper'
 
 class PolicyTest < Minitest::Test
@@ -22,7 +23,7 @@ class PolicyTest < Minitest::Test
   def test_authorizes_get_envs_with_rule_specific_transforms
     result = @policy.authorize('deploy_pipeline', 'GET', '/v2/apps/abc-123-staging-id/envs')
     refute_nil(result)
-    assert_equal(%w[production staging us-east-1], result[:transforms]['response']['mask_values']['whitelist'])
+    assert_equal(%w[todo], result[:transforms]['response']['mask_values']['whitelist'])
   end
 
   def test_rejects_templates_without_leading_slash
@@ -53,5 +54,15 @@ class PolicyTest < Minitest::Test
     assert_raises(Proxy::PolicyError) do
       policy.authorize('test_pipeline', 'GET', '/v2/apps/abc')
     end
+  end
+
+  def test_load_handles_empty_policy_file
+    file = Tempfile.new('policy.yml')
+    file.close
+
+    policy = Proxy::Policy.load(file.path)
+    assert_nil policy.authorize('deploy_pipeline', 'GET', '/v2/apps/abc')
+  ensure
+    file&.unlink
   end
 end

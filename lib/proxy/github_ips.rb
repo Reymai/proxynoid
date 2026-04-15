@@ -10,6 +10,8 @@ module Proxy
   class GithubIps
     DEFAULT_META_URL = 'https://api.github.com/meta'
     REFRESH_SECONDS = 4 * 60 * 60
+    MAX_FETCH_ATTEMPTS = 3
+    RETRY_PAUSE_SECONDS = 0.1
 
     def initialize(static_ranges = [])
       @static_ranges = static_ranges.freeze
@@ -50,14 +52,29 @@ module Proxy
       request = Net::HTTP::Get.new(uri)
       request['User-Agent'] = 'proxynoid-github-actions-ip-sync'
 
-      Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 10, read_timeout: 10) do |http|
-        response = http.request(request)
-        return [] unless response.is_a?(Net::HTTPSuccess)
+      attempt = 0
+      while attempt < MAX_FETCH_ATTEMPTS
+        attempt += 1
 
-        body = JSON.parse(response.body)
-        Array(body['actions']).map(&:to_s).reject(&:empty?)
+        begin
+          Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 10, read_timeout: 10) do |http|
+            response = http.request(request)
+            return parse_actions_response(response) if response.is_a?(Net::HTTPSuccess)
+          end
+        rescue StandardError
+          # Retry transient network and HTTP failures.
+        ensure
+          sleep(RETRY_PAUSE_SECONDS) if attempt < MAX_FETCH_ATTEMPTS
+        end
       end
-    rescue StandardError
+
+      []
+    end
+
+    def parse_actions_response(response)
+      body = JSON.parse(response.body)
+      Array(body['actions']).map(&:to_s).reject(&:empty?)
+    rescue JSON::ParserError
       []
     end
 

@@ -21,6 +21,16 @@ class AuthTest < Minitest::Test
     assert_raises(Proxy::AuthenticationError) { @auth.authenticate(env) }
   end
 
+  def test_uses_request_ip_instead_of_first_forwarded_for
+    env = {
+      'HTTP_X_PROXY_TOKEN' => 'secret-token',
+      'HTTP_X_FORWARDED_FOR' => '192.30.252.1, 203.0.113.5',
+      'REMOTE_ADDR' => '203.0.113.5'
+    }
+
+    assert_equal('deploy_pipeline', @auth.authenticate(env))
+  end
+
   def test_rejects_unallowed_ip
     env = { 'HTTP_X_PROXY_TOKEN' => 'secret-token', 'REMOTE_ADDR' => '198.51.100.10' }
     assert_raises(Proxy::AuthenticationError) { @auth.authenticate(env) }

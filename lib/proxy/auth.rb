@@ -40,9 +40,26 @@ module Proxy
 
     def extract_source_ip(env)
       request = Rack::Request.new(env)
-      forwarded = env['HTTP_X_FORWARDED_FOR']
-      candidate = forwarded && forwarded.split(',').first&.strip
-      candidate || env['REMOTE_ADDR'] || request.ip || ''
+
+      if internal_proxy_address?(env['REMOTE_ADDR'])
+        internal_ip = extract_internal_client_ip(env)
+        return internal_ip unless internal_ip.nil? || internal_ip.empty?
+      end
+
+      request.ip || env['REMOTE_ADDR'] || ''
+    end
+
+    def extract_internal_client_ip(env)
+      env['HTTP_X_REAL_IP'] || env['HTTP_X_CLIENT_IP']
+    end
+
+    def internal_proxy_address?(ip)
+      return false if ip.nil? || ip.empty?
+
+      address = IPAddr.new(ip)
+      address.private? || address.loopback?
+    rescue StandardError
+      false
     end
 
     def source_ip_allowed?(ip)

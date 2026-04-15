@@ -6,13 +6,14 @@ require 'psych'
 module Proxy
   class Policy
     def self.load(path)
-      raw = Psych.safe_load(File.read(path), symbolize_names: false)
+      raw = Psych.safe_load(File.read(path), symbolize_names: false) || {}
       new(raw)
     rescue StandardError => e
       raise PolicyError, "Failed to load policy file: #{e.message}"
     end
 
     def initialize(raw)
+      raw ||= {}
       @keys = raw.fetch('keys', {})
     end
 

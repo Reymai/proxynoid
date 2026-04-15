@@ -5,6 +5,8 @@ require 'net/http'
 require 'uri'
 
 module Proxy
+  class ResponseSizeError < StandardError; end unless const_defined?(:ResponseSizeError)
+
   class Forwarder
     def initialize(config)
       @config = config
@@ -17,8 +19,7 @@ module Proxy
       apply_request_headers(http_request, request)
 
       response = perform_http_request(http_request, uri)
-
-      [response.code.to_i, response.each_header.to_h, response.body.to_s]
+      [response.code.to_i, response.each_header.to_h, read_response_body(response)]
     end
 
     def perform_http_request(http_request, uri)
@@ -52,6 +53,27 @@ module Proxy
 
         net_request[header_name] = value
       end
+    end
+
+    def read_response_body(response)
+      if response['content-length'] && !response['content-length'].empty?
+        content_length = response['content-length'].to_i
+        if content_length.positive? && content_length > max_payload_bytes
+          raise ResponseSizeError, 'Payload exceeds configured MAX_PAYLOAD_MB'
+        end
+      end
+
+      body = +''
+      response.read_body do |chunk|
+        body << chunk
+        raise ResponseSizeError, 'Payload exceeds configured MAX_PAYLOAD_MB' if body.bytesize > max_payload_bytes
+      end
+
+      body
+    end
+
+    def max_payload_bytes
+      @config.max_payload_mb * 1024 * 1024
     end
   end
 end
