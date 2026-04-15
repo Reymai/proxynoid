@@ -1,0 +1,44 @@
+# Bundler
+/.bundle
+/vendor/bundle
+
+# Ruby
+*.gem
+*.rbc
+.bundle/
+coverage/
+InstalledFiles
+pkg/
+spec/reports/
+*.lock
+
+# Environment files
+.env
+
+# Logs and tempfiles
+/log/
+/log/*
+/tmp/
+/tmp/*
+
+# OS generated files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Test and documentation output
+/test/tmp/
+/test/*.log
+
+# Ignore RubyMine project files
+.idea/
+
+# Ignore MacOS file metadata
+*.DS_Store

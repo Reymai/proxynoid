@@ -1,0 +1,8 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'bundler/setup'
+require 'puma/cli'
+
+config_file = File.expand_path('../config/puma.rb', __dir__)
+Puma::CLI.new(['-C', config_file]).run
