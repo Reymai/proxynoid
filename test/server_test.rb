@@ -53,4 +53,21 @@ class ServerTest < Minitest::Test
 
     assert_equal 403, response.status
   end
+
+  def test_forbidden_payload_logs_policy_mismatch
+    logged_payload = nil
+    @server.define_singleton_method(:log_event) do |payload|
+      logged_payload = payload.dup
+    end
+
+    request = Rack::MockRequest.new(@server)
+    request.post('/v2/apps/abc-123/other',
+                 'HTTP_X_PROXY_TOKEN' => 'secret-token',
+                 'REMOTE_ADDR' => '127.0.0.1',
+                 input: '{}')
+
+    assert_equal('deploy_pipeline', logged_payload[:key_id])
+    assert_equal(false, logged_payload[:allowed])
+    assert_equal('policy_mismatch', logged_payload[:error])
+  end
 end

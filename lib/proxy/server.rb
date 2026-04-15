@@ -36,7 +36,10 @@ module Proxy
     def handle_request(request, payload, started_at)
       key_id = authenticate_request(request)
       policy_result = authorize_request(key_id, request)
-      return forbidden_response unless policy_result
+      unless policy_result
+        payload.merge!(key_id: key_id, allowed: false, error: 'policy_mismatch')
+        return forbidden_response
+      end
 
       response_status, response_headers, response_body = @forwarder.forward(request)
       transformed_body = @transformer.apply(response_body.to_s, response_headers, policy_result[:transforms])
