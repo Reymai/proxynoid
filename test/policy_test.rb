@@ -3,6 +3,7 @@
 require 'tempfile'
 require_relative 'test_helper'
 
+# rubocop:disable Metrics/ClassLength
 class PolicyTest < Minitest::Test
   def setup
     policy_path = File.expand_path('../config/policies.yml', __dir__)
@@ -99,4 +100,35 @@ class PolicyTest < Minitest::Test
 
     assert_equal(['production'], result[:transforms]['response']['mask_values']['whitelist'])
   end
+
+  def test_allows_any_id_when_resource_ids_nil
+    raw = {
+      'keys' => {
+        'test_pipeline' => {
+          'allowed' => [
+            { 'method' => 'GET', 'path' => '/v2/apps/:app_id/envs', 'resource_ids' => nil }
+          ]
+        }
+      }
+    }
+
+    policy = Proxy::Policy.new(raw)
+    assert policy.authorize('test_pipeline', 'GET', '/v2/apps/any-id/envs')
+  end
+
+  def test_allows_any_id_when_resource_ids_empty
+    raw = {
+      'keys' => {
+        'test_pipeline' => {
+          'allowed' => [
+            { 'method' => 'GET', 'path' => '/v2/apps/:app_id/envs', 'resource_ids' => [] }
+          ]
+        }
+      }
+    }
+
+    policy = Proxy::Policy.new(raw)
+    assert policy.authorize('test_pipeline', 'GET', '/v2/apps/any-id/envs')
+  end
 end
+# rubocop:enable Metrics/ClassLength

@@ -70,4 +70,29 @@ class ServerTest < Minitest::Test
     assert_equal(false, logged_payload[:allowed])
     assert_equal('policy_mismatch', logged_payload[:error])
   end
+
+  def test_response_size_errors_return_bad_gateway
+    forwarder = Object.new
+    forwarder.define_singleton_method(:forward) do |_request|
+      raise Proxy::ResponseSizeError, 'Payload exceeds configured MAX_PAYLOAD_MB'
+    end
+
+    server = Proxy::Server.new(
+      config: @config,
+      github_ips: @github_ips,
+      auth: @auth,
+      policy: @policy,
+      forwarder: forwarder,
+      transformer: @transformer
+    )
+    request = Rack::MockRequest.new(server)
+    response = request.post(
+      '/v2/apps/abc-123/deployments',
+      'HTTP_X_PROXY_TOKEN' => 'secret-token',
+      'REMOTE_ADDR' => '127.0.0.1',
+      input: '{}'
+    )
+
+    assert_equal 502, response.status
+  end
 end

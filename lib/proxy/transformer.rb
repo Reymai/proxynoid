@@ -59,6 +59,4 @@ module Proxy
       end
     end
   end
-
-  class ResponseSizeError < StandardError; end
 end

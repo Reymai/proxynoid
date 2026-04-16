@@ -21,6 +21,12 @@ module Proxy
       @policy = dependencies.fetch(:policy, @config.policy)
       @forwarder = dependencies.fetch(:forwarder) { Forwarder.new(@config) }
       @transformer = dependencies.fetch(:transformer) { Transformer.new(@config.max_payload_mb) }
+      initialize_stdout(dependencies)
+    end
+
+    def initialize_stdout(dependencies)
+      @stdout = dependencies.fetch(:stdout) { $stdout }
+      @stdout.sync = true
     end
 
     def call(env)
@@ -100,7 +106,7 @@ module Proxy
     end
 
     def log_event(payload)
-      puts JSON.generate(payload)
+      @stdout.puts(JSON.generate(payload))
     end
 
     def current_time

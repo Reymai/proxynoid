@@ -82,7 +82,8 @@ module Proxy
       Thread.new do
         loop do
           sleep REFRESH_SECONDS
-          refresh!
+          success = refresh!
+          warn("[proxynoid] GitHub IP refresh failed after #{MAX_FETCH_ATTEMPTS} attempts") unless success
         end
       end.tap(&:abort_on_exception)
     end

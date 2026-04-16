@@ -42,4 +42,12 @@ class TransformerTest < Minitest::Test
       @transformer.apply(body, headers, transforms)
     end
   end
+
+  def test_returns_body_as_is_when_not_json
+    body = 'not json'
+    headers = { 'content-type' => 'application/json' }
+    transforms = { 'response' => { 'mask_values' => { 'whitelist' => [] } } }
+
+    assert_equal(body, @transformer.apply(body, headers, transforms))
+  end
 end
