@@ -100,6 +100,47 @@ class ServerTest < Minitest::Test
     ENV.delete('LOG_ERROR_DETAIL')
   end
 
+  def test_metrics_endpoint_returns_prometheus_text_when_no_token_required
+    request = Rack::MockRequest.new(@server)
+    response = request.get('/metrics', 'REMOTE_ADDR' => '198.51.100.1')
+
+    assert_equal 200, response.status
+    assert_match(%r{text/plain}, response.headers['Content-Type'])
+    assert_match(/proxynoid_requests_total/, response.body)
+  end
+
+  def test_metrics_endpoint_rejects_when_bearer_missing
+    server = Proxy::Server.new(config: @config, github_ips: @github_ips, auth: @auth, policy: @policy,
+                               forwarder: @forwarder, transformer: @transformer,
+                               metrics_token: 'shh', skip_policy_watcher: true)
+
+    response = Rack::MockRequest.new(server).get('/metrics')
+    assert_equal 401, response.status
+  end
+
+  def test_metrics_endpoint_accepts_correct_bearer
+    server = Proxy::Server.new(config: @config, github_ips: @github_ips, auth: @auth, policy: @policy,
+                               forwarder: @forwarder, transformer: @transformer,
+                               metrics_token: 'shh', skip_policy_watcher: true)
+
+    response = Rack::MockRequest.new(server).get('/metrics', 'HTTP_AUTHORIZATION' => 'Bearer shh')
+    assert_equal 200, response.status
+  end
+
+  def test_metrics_record_allowed_request
+    metrics = Proxy::Metrics.new
+    server = Proxy::Server.new(config: @config, github_ips: @github_ips, auth: @auth, policy: @policy,
+                               forwarder: @forwarder, transformer: @transformer,
+                               metrics: metrics, skip_policy_watcher: true)
+
+    Rack::MockRequest.new(server).post('/v2/apps/abc-123/deployments',
+                                       'HTTP_X_PROXY_TOKEN' => 'secret-token',
+                                       'REMOTE_ADDR' => '127.0.0.1', input: '{}')
+
+    assert_match(/proxynoid_requests_total\{key_id="deploy_pipeline",method="POST",outcome="allowed"\} 1/,
+                 metrics.to_prometheus)
+  end
+
   def test_healthz_returns_200_without_auth
     request = Rack::MockRequest.new(@server)
     response = request.get('/healthz', 'REMOTE_ADDR' => '198.51.100.1')
@@ -186,6 +227,26 @@ class ServerTest < Minitest::Test
     Rack::MockRequest.new(@server).get('/readyz')
 
     assert_empty logged
+  end
+
+  def test_dry_run_forwards_policy_mismatch_with_would_deny_flag
+    config_struct = Struct.new(:proxy_keys, :allowed_ip_ranges, :max_payload_mb, :upstream_timeout, :do_api_token,
+                               :policy, :policy_audit_only)
+    audit_only_cfg = config_struct.new({ 'deploy_pipeline' => 'secret-token' }, [], 5, 10, 'do-token', nil, true)
+    server = Proxy::Server.new(config: audit_only_cfg, github_ips: @github_ips, auth: @auth, policy: @policy,
+                               forwarder: @forwarder, transformer: @transformer, skip_policy_watcher: true)
+
+    logged = nil
+    server.define_singleton_method(:log_event) { |payload| logged = payload.dup }
+
+    response = Rack::MockRequest.new(server).post('/v2/apps/abc-123/other',
+                                                  'HTTP_X_PROXY_TOKEN' => 'secret-token',
+                                                  'REMOTE_ADDR' => '127.0.0.1', input: '{}')
+
+    assert_equal 200, response.status
+    assert_equal(true, logged[:allowed])
+    assert_equal(true, logged[:would_deny])
+    assert_equal('policy.mismatch', logged[:audit_only_reason])
   end
 
   def test_returns_429_when_rate_limit_exceeded

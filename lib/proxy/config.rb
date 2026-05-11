@@ -18,7 +18,8 @@ module Proxy
                 :upstream_timeout,
                 :policy,
                 :policy_path,
-                :policy_reload_interval
+                :policy_reload_interval,
+                :policy_audit_only
 
     def self.load!
       new
@@ -34,6 +35,7 @@ module Proxy
       @policy_path = ENV.fetch('POLICY_PATH', File.expand_path('../../config/policies.yml', __dir__))
       @policy_reload_interval = parse_non_negative_integer(ENV.fetch('POLICY_RELOAD_INTERVAL', '30'),
                                                            'POLICY_RELOAD_INTERVAL')
+      @policy_audit_only = ENV['POLICY_AUDIT_ONLY'] == '1'
       @policy = Policy.load(@policy_path)
     end
 
