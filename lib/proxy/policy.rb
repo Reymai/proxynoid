@@ -48,16 +48,30 @@ module Proxy
     end
 
     def rule_matches?(rule, normalized_method, path, query)
-      return false unless rule['method'].to_s.upcase == normalized_method
+      return false unless method_matches?(rule, normalized_method)
 
       matcher = compile_path(rule['path'])
-      match = matcher[:regex].match(path.to_s)
+      match = matcher[:regex].match(normalize_path(path.to_s, rule['path']))
       return false unless match
 
       payload = matcher[:keys].zip(match.captures).to_h
       return false unless resource_allowed?(rule['resource_ids'], payload)
 
       query_allowed?(rule['query'], query)
+    end
+
+    def method_matches?(rule, normalized_method)
+      rule_method = rule['method'].to_s.upcase
+      return true if rule_method == normalized_method
+      return false unless normalized_method == 'HEAD' && rule_method == 'GET'
+
+      rule['allow_head'] != false
+    end
+
+    def normalize_path(request_path, template)
+      return request_path if request_path == '/' || template.to_s.end_with?('/')
+
+      request_path.chomp('/')
     end
 
     def query_allowed?(query_config, query)
@@ -102,7 +116,7 @@ module Proxy
     end
 
     def build_path_regex(template)
-      template.split('/').map do |segment|
+      template.split('/', -1).map do |segment|
         if segment.start_with?(':')
           '([^/]+)'
         else
@@ -112,7 +126,7 @@ module Proxy
     end
 
     def extract_path_keys(template)
-      template.split('/').each_with_object([]) do |segment, keys|
+      template.split('/', -1).each_with_object([]) do |segment, keys|
         next unless segment.start_with?(':')
 
         key = segment[1..]

@@ -10,7 +10,7 @@ module Proxy
     ALLOWED_KEY_FIELDS = %w[description transforms allowed allowed_request_headers].freeze
     ALLOWED_RULE_FIELDS = %w[
       method path resource_ids query transforms allowed_request_headers
-      require_signature upstream
+      require_signature upstream allow_head
     ].freeze
     ALLOWED_QUERY_FIELDS = %w[allowed required values].freeze
     ALLOWED_TRANSFORM_FIELDS = %w[response].freeze
@@ -57,6 +57,7 @@ module Proxy
       validate_transforms!(rule['transforms'], "#{path}.transforms") if rule.key?('transforms')
       validate_upstream!(rule['upstream'], "#{path}.upstream") if rule.key?('upstream')
       validate_bool!(rule['require_signature'], "#{path}.require_signature") if rule.key?('require_signature')
+      validate_bool!(rule['allow_head'], "#{path}.allow_head") if rule.key?('allow_head')
     end
 
     def self.validate_method!(value, path)

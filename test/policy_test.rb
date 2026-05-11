@@ -116,6 +116,46 @@ class PolicyTest < Minitest::Test
     assert policy.authorize('test_pipeline', 'GET', '/v2/apps/any-id/envs')
   end
 
+  def test_head_request_matches_get_rule_by_default
+    raw = {
+      'keys' => {
+        'p' => { 'allowed' => [{ 'method' => 'GET', 'path' => '/v2/x' }] }
+      }
+    }
+
+    policy = Proxy::Policy.new(raw, warn_io: StringIO.new)
+    assert policy.authorize('p', 'HEAD', '/v2/x', {})
+  end
+
+  def test_head_request_does_not_match_when_allow_head_false
+    raw = {
+      'keys' => {
+        'p' => { 'allowed' => [{ 'method' => 'GET', 'path' => '/v2/x', 'allow_head' => false }] }
+      }
+    }
+
+    policy = Proxy::Policy.new(raw, warn_io: StringIO.new)
+    assert_nil policy.authorize('p', 'HEAD', '/v2/x', {})
+  end
+
+  def test_trailing_slash_is_stripped_unless_rule_template_keeps_it
+    raw = {
+      'keys' => {
+        'p' => {
+          'allowed' => [
+            { 'method' => 'GET', 'path' => '/v2/apps' },
+            { 'method' => 'GET', 'path' => '/v2/with-slash/' }
+          ]
+        }
+      }
+    }
+
+    policy = Proxy::Policy.new(raw, warn_io: StringIO.new)
+    assert policy.authorize('p', 'GET', '/v2/apps/', {})
+    assert policy.authorize('p', 'GET', '/v2/apps', {})
+    assert policy.authorize('p', 'GET', '/v2/with-slash/', {})
+  end
+
   def test_query_allowed_rejects_unknown_keys
     raw = {
       'keys' => {

@@ -11,6 +11,7 @@ require_relative 'policy'
 require_relative 'forwarder'
 require_relative 'transformer'
 require_relative 'rate_limiter'
+require_relative 'health'
 require 'ipaddr'
 
 module Proxy
@@ -22,8 +23,11 @@ module Proxy
       @auth = dependencies.fetch(:auth) { Auth.new(@config, @github_ips, rate_limiter: @rate_limiter) }
       @policy = dependencies.fetch(:policy, @config.policy)
       @forwarder = dependencies.fetch(:forwarder) { Forwarder.new(@config) }
-      @transformer = dependencies.fetch(:transformer) { Transformer.new(@config.max_payload_mb) }
+      @transformer = dependencies.fetch(:transformer) { Transformer.new }
+      @health = dependencies.fetch(:health) { Health.new(@github_ips) }
+      @policy_mutex = Mutex.new
       initialize_stdout(dependencies)
+      start_policy_watcher unless dependencies[:skip_policy_watcher]
     end
 
     def initialize_stdout(dependencies)
@@ -31,13 +35,37 @@ module Proxy
       @stdout.sync = true
     end
 
+    def reload_policy!
+      path = @config.respond_to?(:policy_path) ? @config.policy_path : nil
+      return unless path && File.exist?(path)
+
+      new_policy = Policy.load(path)
+      rules = count_rules(new_policy)
+      @policy_mutex.synchronize { @policy = new_policy }
+      log_event(event: 'policy.reloaded', rules: rules, ts: time_stamp)
+    rescue StandardError => e
+      log_event(event: 'policy.reload_failed', error: e.message, ts: time_stamp)
+    end
+
     def call(env)
       request = Rack::Request.new(env)
+      health_response = handle_health(request)
+      return health_response if health_response
+
       started_at = current_time
       payload = initial_log_payload(request)
 
       with_error_handling(payload) do
         handle_request(request, payload, started_at)
+      end
+    end
+
+    def handle_health(request)
+      return nil unless request.get?
+
+      case request.path
+      when '/healthz' then @health.healthz
+      when '/readyz' then @health.readyz
       end
     end
 
@@ -103,7 +131,7 @@ module Proxy
     end
 
     def authorize_request(key_id, request)
-      @policy.authorize(key_id, request.request_method, request.path, request.GET)
+      current_policy.authorize(key_id, request.request_method, request.path, request.GET)
     end
 
     def initial_log_payload(request)
@@ -142,6 +170,44 @@ module Proxy
 
     def time_stamp
       Time.now.utc.iso8601
+    end
+
+    def start_policy_watcher
+      interval = @config.respond_to?(:policy_reload_interval) ? @config.policy_reload_interval : 0
+      path = @config.respond_to?(:policy_path) ? @config.policy_path : nil
+      return if interval.nil? || interval.zero? || path.nil? || !File.exist?(path)
+
+      @policy_watcher = Thread.new { policy_watch_loop(path, interval) }
+      @policy_watcher.report_on_exception = true
+    end
+
+    def policy_watch_loop(path, interval)
+      last_mtime = safe_mtime(path)
+      loop do
+        sleep interval
+        current = safe_mtime(path)
+        next if current.nil? || current == last_mtime
+
+        last_mtime = current
+        reload_policy!
+      end
+    rescue StandardError => e
+      warn("[proxynoid] policy watcher crashed: #{e.class}: #{e.message}")
+    end
+
+    def safe_mtime(path)
+      File.mtime(path)
+    rescue StandardError
+      nil
+    end
+
+    def count_rules(policy)
+      keys = policy.instance_variable_get(:@keys) || {}
+      keys.values.sum { |key_config| Array(key_config && key_config['allowed']).size }
+    end
+
+    def current_policy
+      @policy_mutex.synchronize { @policy }
     end
   end
 end

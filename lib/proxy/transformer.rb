@@ -9,14 +9,8 @@ module Proxy
     FILTERED_VALUE = '[FILTERED]'
     DEFAULT_SENSITIVE_KEYS = ['value'].freeze
 
-    def initialize(max_payload_mb)
-      @max_payload_bytes = max_payload_mb * 1024 * 1024
-    end
-
     def apply(body, headers, transforms)
       return body unless should_transform?(headers, transforms)
-
-      enforce_payload_size!(body)
 
       document = parse_json(body)
       return body unless document
@@ -30,12 +24,6 @@ module Proxy
 
     def should_transform?(headers, transforms)
       transforms.is_a?(Hash) && transforms.key?('response') && headers['content-type']&.include?('application/json')
-    end
-
-    def enforce_payload_size!(body)
-      return if body.bytesize <= @max_payload_bytes
-
-      raise ResponseSizeError, 'Payload exceeds configured MAX_PAYLOAD_MB'
     end
 
     def parse_json(body)

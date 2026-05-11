@@ -16,7 +16,9 @@ module Proxy
                 :trusted_proxy_cidrs,
                 :max_payload_mb,
                 :upstream_timeout,
-                :policy
+                :policy,
+                :policy_path,
+                :policy_reload_interval
 
     def self.load!
       new
@@ -29,7 +31,10 @@ module Proxy
       @trusted_proxy_cidrs = parse_allowed_ranges(ENV.fetch('TRUSTED_PROXY_CIDRS', ''))
       @max_payload_mb = parse_positive_integer(ENV.fetch('MAX_PAYLOAD_MB', '5'), 'MAX_PAYLOAD_MB')
       @upstream_timeout = parse_positive_integer(ENV.fetch('UPSTREAM_TIMEOUT', '10'), 'UPSTREAM_TIMEOUT')
-      @policy = Policy.load(File.expand_path('../../config/policies.yml', __dir__))
+      @policy_path = ENV.fetch('POLICY_PATH', File.expand_path('../../config/policies.yml', __dir__))
+      @policy_reload_interval = parse_non_negative_integer(ENV.fetch('POLICY_RELOAD_INTERVAL', '30'),
+                                                           'POLICY_RELOAD_INTERVAL')
+      @policy = Policy.load(@policy_path)
     end
 
     private
@@ -59,6 +64,14 @@ module Proxy
     def parse_positive_integer(value, name)
       Integer(value).tap do |parsed|
         raise InvalidEnv, "#{name} must be greater than zero" unless parsed.positive?
+      end
+    rescue ArgumentError
+      raise InvalidEnv, "#{name} must be an integer"
+    end
+
+    def parse_non_negative_integer(value, name)
+      Integer(value).tap do |parsed|
+        raise InvalidEnv, "#{name} must be zero or positive" if parsed.negative?
       end
     rescue ArgumentError
       raise InvalidEnv, "#{name} must be an integer"
