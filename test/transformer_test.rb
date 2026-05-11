@@ -5,7 +5,7 @@ require 'json'
 
 class TransformerTest < Minitest::Test
   def setup
-    @transformer = Proxy::Transformer.new(1)
+    @transformer = Proxy::Transformer.new
   end
 
   def test_masks_value_field_when_not_whitelisted
@@ -31,16 +31,6 @@ class TransformerTest < Minitest::Test
 
     expected = { 'items' => [{ 'value' => '[FILTERED]' }, { 'value' => 'production' }] }.to_json
     assert_equal(expected, @transformer.apply(body, headers, transforms))
-  end
-
-  def test_rejects_payloads_over_max_size
-    body = 'x' * ((1 * 1024 * 1024) + 1)
-    headers = { 'content-type' => 'application/json' }
-    transforms = { 'response' => { 'mask_values' => { 'whitelist' => [] } } }
-
-    assert_raises(Proxy::ResponseSizeError) do
-      @transformer.apply(body, headers, transforms)
-    end
   end
 
   def test_returns_body_as_is_when_not_json

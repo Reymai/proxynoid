@@ -13,15 +13,17 @@ module Proxy
     MAX_FETCH_ATTEMPTS = 3
     RETRY_PAUSE_SECONDS = 0.1
 
-    def initialize(static_ranges = [])
+    def initialize(static_ranges = [], warn_io: $stderr)
       @static_ranges = static_ranges.freeze
       @cidrs = []
       @mutex = Mutex.new
       ready = refresh!
       unless ready || @static_ranges.any?
-        raise 'Unable to initialize GitHub Actions IP ranges and no static ranges provided'
+        raise 'Unable to fetch GitHub Actions IP ranges and ALLOWED_IP_RANGES is empty. ' \
+              'Self-hosted runners need ALLOWED_IP_RANGES set explicitly.'
       end
 
+      warn_if_no_static_ranges(warn_io, ready)
       start_background_refresh
     end
 
@@ -33,6 +35,10 @@ module Proxy
       end
     rescue StandardError
       false
+    end
+
+    def ready?
+      @mutex.synchronize { @cidrs.any? }
     end
 
     private
@@ -76,6 +82,15 @@ module Proxy
       Array(body['actions']).map(&:to_s).reject(&:empty?)
     rescue JSON::ParserError
       []
+    end
+
+    def warn_if_no_static_ranges(warn_io, github_ready)
+      return if @static_ranges.any?
+      return unless github_ready
+
+      warn_io.puts('[proxynoid] WARNING: ALLOWED_IP_RANGES is empty. ' \
+                   'Requests from self-hosted runners will be rejected. ' \
+                   'Set ALLOWED_IP_RANGES if you use self-hosted runners.')
     end
 
     def start_background_refresh

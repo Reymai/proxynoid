@@ -60,6 +60,8 @@ bundle exec rackup config.ru -p 9292
 | `MAX_PAYLOAD_MB` | no | `5` | Maximum response body size returned from upstream. Larger payloads are dropped with `502`. |
 | `UPSTREAM_TIMEOUT` | no | `10` | DigitalOcean API open/read timeout in seconds. |
 | `LOG_ERROR_DETAIL` | no | unset | When `1`, the audit log adds an `error_detail` field with the raw exception message. Off by default so audit records stay free of upstream messages. |
+| `POLICY_PATH` | no | `config/policies.yml` next to `bin/server` | Override the location of the policy file. Useful when mounting `policies.yml` from a secret or configmap. |
+| `POLICY_RELOAD_INTERVAL` | no | `30` | Seconds between mtime checks for hot-reload. Set to `0` to disable. When the file changes the proxy reloads it under a mutex, logs `{event: "policy.reloaded", rules: N}`, and keeps serving without restart. Bad YAML logs `policy.reload_failed` and the previous policy stays in force. |
 
 Example:
 
@@ -123,7 +125,8 @@ keys:
 
 | Field | Type | Required | Purpose |
 |---|---|---|---|
-| `method` | string | yes | HTTP method. Compared case-insensitively against `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`. |
+| `method` | string | yes | HTTP method. Compared case-insensitively against `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`. `HEAD` requests automatically match `GET` rules unless opted out via `allow_head: false`. |
+| `allow_head` | bool | no (`true`) | Opt out of the implicit HEAD→GET match for this rule. |
 | `path` | string | yes | Path template. Must start with `/`. Use `:name` for dynamic segments (e.g. `/v2/apps/:app_id`). Allowed characters: `[A-Za-z0-9/_:.\-]`. |
 | `resource_ids` | hash *or* array | no | Restricts the captured `:name` segments to a fixed set. **Hash form (preferred)** maps each path parameter to its allowed values, e.g. `{app_id: ["abc"], component: ["worker"]}` — every named param must match. **Array form (legacy)** matches against the first path parameter only and emits a deprecation warning at load. Omitting the field allows any value. |
 | `query` | hash | no | Constrains query-string parameters. See below. |
@@ -171,6 +174,27 @@ If your deployment puts a reverse proxy (LB, sidecar) in front of `proxynoid`, s
 3. Once traffic for the old key has stopped, remove it on the next deploy.
 
 Both tokens are checked in constant time; lookup order is irrelevant.
+
+## Health endpoints
+
+The proxy exposes two probe endpoints. Both bypass auth, policy, and the audit feed so a healthcheck loop never drowns out the audit log.
+
+| Endpoint | Status | Returns |
+|---|---|---|
+| `GET /healthz` | always `200` | `{"status":"ok"}` once the process is up |
+| `GET /readyz` | `200` when ready, `503` otherwise | Ready means at least one source IP CIDR is loaded (either from `api.github.com/meta` or `ALLOWED_IP_RANGES`). Useful as a load-balancer readiness probe. |
+
+## Hot reload
+
+`config/policies.yml` is watched via `mtime` polling (interval `POLICY_RELOAD_INTERVAL`, default 30 s). When it changes, the proxy re-validates the file against the schema and swaps the in-memory policy under a mutex — no restart, no dropped connections. The reload emits:
+
+```json
+{"event":"policy.reloaded","rules":5,"ts":"..."}
+```
+
+If the new file fails schema validation, the previous policy stays in force and the proxy logs `{"event":"policy.reload_failed","error":"..."}`. Operators typically: edit the file, watch the audit feed for the `policy.reloaded` event, then move on.
+
+Set `POLICY_RELOAD_INTERVAL=0` to disable watching entirely (e.g. when shipping `policies.yml` immutably with the container image).
 
 ## Logging
 

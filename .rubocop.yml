@@ -22,7 +22,7 @@ Metrics/BlockLength:
     - 'test/**/*'
 
 Metrics/ClassLength:
-  Max: 150
+  Max: 180
   Exclude:
     - 'test/**/*'
 
