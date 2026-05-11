@@ -79,13 +79,22 @@ module Proxy
     end
 
     def start_background_refresh
-      Thread.new do
-        loop do
-          sleep REFRESH_SECONDS
+      thread = Thread.new { background_refresh_loop }
+      thread.report_on_exception = true
+      thread
+    end
+
+    def background_refresh_loop
+      loop do
+        sleep REFRESH_SECONDS
+
+        begin
           success = refresh!
           warn("[proxynoid] GitHub IP refresh failed after #{MAX_FETCH_ATTEMPTS} attempts") unless success
+        rescue StandardError => e
+          warn("[proxynoid] GitHub IP refresh raised #{e.class}: #{e.message}; continuing")
         end
-      end.tap(&:abort_on_exception)
+      end
     end
   end
 end

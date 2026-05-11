@@ -8,10 +8,12 @@ keys:
     allowed:
       - method: POST
         path: "/v2/apps/:app_id/deployments"
-        resource_ids: ["abc-123-staging-id"]
+        resource_ids:
+          app_id: ["abc-123-staging-id"]
       - method: GET
         path: "/v2/apps/:app_id/envs"
-        resource_ids: ["abc-123-staging-id"]
+        resource_ids:
+          app_id: ["abc-123-staging-id"]
         transforms:
           response:
             mask_values:

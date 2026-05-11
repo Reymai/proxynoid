@@ -13,6 +13,7 @@ module Proxy
     attr_reader :do_api_token,
                 :proxy_keys,
                 :allowed_ip_ranges,
+                :trusted_proxy_cidrs,
                 :max_payload_mb,
                 :upstream_timeout,
                 :policy
@@ -25,6 +26,7 @@ module Proxy
       @do_api_token = fetch_env!('DO_API_TOKEN')
       @proxy_keys = parse_proxy_keys(fetch_env!('PROXY_KEYS'))
       @allowed_ip_ranges = parse_allowed_ranges(ENV.fetch('ALLOWED_IP_RANGES', ''))
+      @trusted_proxy_cidrs = parse_allowed_ranges(ENV.fetch('TRUSTED_PROXY_CIDRS', ''))
       @max_payload_mb = parse_positive_integer(ENV.fetch('MAX_PAYLOAD_MB', '5'), 'MAX_PAYLOAD_MB')
       @upstream_timeout = parse_positive_integer(ENV.fetch('UPSTREAM_TIMEOUT', '10'), 'UPSTREAM_TIMEOUT')
       @policy = Policy.load(File.expand_path('../../config/policies.yml', __dir__))
