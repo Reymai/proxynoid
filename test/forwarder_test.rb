@@ -36,6 +36,65 @@ class ForwarderTest < Minitest::Test
     assert_equal({ 'success' => true }.to_json, body)
   end
 
+  def test_drops_non_whitelisted_request_headers
+    stub_request(:get, 'https://api.digitalocean.com/v2/apps')
+      .with do |req|
+        !req.headers.keys.map(&:downcase).include?('x-evil') &&
+          !req.headers.keys.map(&:downcase).include?('cookie') &&
+          !req.headers.keys.map(&:downcase).include?('x-proxy-token')
+      end
+      .to_return(status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' })
+
+    env = Rack::MockRequest.env_for(
+      '/v2/apps',
+      method: 'GET',
+      'HTTP_X_EVIL' => 'leak',
+      'HTTP_COOKIE' => 'session=abc',
+      'HTTP_X_PROXY_TOKEN' => 'secret',
+      'HTTP_USER_AGENT' => 'test-agent'
+    )
+    request = Rack::Request.new(env)
+
+    status, = @forwarder.forward(request)
+    assert_equal 200, status
+  end
+
+  def test_forwards_extra_allowed_request_header
+    stub_request(:get, 'https://api.digitalocean.com/v2/apps')
+      .with(headers: { 'X-Trace-Id' => 'abc' })
+      .to_return(status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' })
+
+    env = Rack::MockRequest.env_for('/v2/apps', method: 'GET', 'HTTP_X_TRACE_ID' => 'abc')
+    request = Rack::Request.new(env)
+
+    status, = @forwarder.forward(request, allowed_request_headers: ['X-Trace-Id'])
+    assert_equal 200, status
+  end
+
+  def test_strips_disallowed_query_params_when_filter_set
+    stub_request(:get, 'https://api.digitalocean.com/v2/apps')
+      .with(query: { 'page' => '2' })
+      .to_return(status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' })
+
+    env = Rack::MockRequest.env_for('/v2/apps?page=2&evil=1', method: 'GET')
+    request = Rack::Request.new(env)
+
+    status, = @forwarder.forward(request, query_allowed: ['page'])
+    assert_equal 200, status
+  end
+
+  def test_passes_query_through_when_no_filter
+    stub_request(:get, 'https://api.digitalocean.com/v2/apps')
+      .with(query: { 'page' => '2', 'whatever' => '1' })
+      .to_return(status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' })
+
+    env = Rack::MockRequest.env_for('/v2/apps?page=2&whatever=1', method: 'GET')
+    request = Rack::Request.new(env)
+
+    status, = @forwarder.forward(request)
+    assert_equal 200, status
+  end
+
   def test_rejects_upstream_payloads_over_max_size
     stub_request(:get, 'https://api.digitalocean.com/v2/apps/abc/deployments')
       .to_return(status: 200,
