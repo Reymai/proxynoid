@@ -62,6 +62,9 @@ bundle exec rackup config.ru -p 9292
 | `LOG_ERROR_DETAIL` | no | unset | When `1`, the audit log adds an `error_detail` field with the raw exception message. Off by default so audit records stay free of upstream messages. |
 | `POLICY_PATH` | no | `config/policies.yml` next to `bin/server` | Override the location of the policy file. Useful when mounting `policies.yml` from a secret or configmap. |
 | `POLICY_RELOAD_INTERVAL` | no | `30` | Seconds between mtime checks for hot-reload. Set to `0` to disable. When the file changes the proxy reloads it under a mutex, logs `{event: "policy.reloaded", rules: N}`, and keeps serving without restart. Bad YAML logs `policy.reload_failed` and the previous policy stays in force. |
+| `POLICY_AUDIT_ONLY` | no | unset | When `1`, the proxy forwards requests upstream even when policy denies them, and logs `would_deny: true` plus `audit_only_reason`. Use this when rolling out a tightened policy — watch the audit feed for hits before flipping the flag off. |
+| `AUDIT_WEBHOOK_URL` | no | unset | If set, every audit JSON line is also POSTed (fire-and-forget) to this URL. Useful for shipping audit events to Loki, Elasticsearch, or a Slack webhook. The bounded queue drops events under backpressure rather than blocking the request path; drops are warned at most once per minute. |
+| `METRICS_TOKEN` | no | unset | Bearer token required to access `GET /metrics`. If unset, the endpoint is open — set it whenever the proxy is reachable from anything other than your scrape job. |
 
 Example:
 
@@ -175,14 +178,24 @@ If your deployment puts a reverse proxy (LB, sidecar) in front of `proxynoid`, s
 
 Both tokens are checked in constant time; lookup order is irrelevant.
 
-## Health endpoints
+## Health and metrics endpoints
 
-The proxy exposes two probe endpoints. Both bypass auth, policy, and the audit feed so a healthcheck loop never drowns out the audit log.
+The proxy exposes three operational endpoints. All bypass auth, policy, and the audit feed so a healthcheck or scrape loop never drowns out the audit log.
 
 | Endpoint | Status | Returns |
 |---|---|---|
 | `GET /healthz` | always `200` | `{"status":"ok"}` once the process is up |
 | `GET /readyz` | `200` when ready, `503` otherwise | Ready means at least one source IP CIDR is loaded (either from `api.github.com/meta` or `ALLOWED_IP_RANGES`). Useful as a load-balancer readiness probe. |
+| `GET /metrics` | `200` (or `401` if a token is required) | Prometheus text-format metrics. Gated by `METRICS_TOKEN` via `Authorization: Bearer <token>`. |
+
+### Available metrics
+
+| Name | Type | Labels | Meaning |
+|---|---|---|---|
+| `proxynoid_requests_total` | counter | `key_id`, `method`, `outcome` | Every proxy request. `outcome` is one of `allowed`, `denied`, `auth_failed`, `rate_limited`, `upstream_error`, `audit_only`. |
+| `proxynoid_upstream_duration_ms` | histogram | — | Time spent on the upstream API call (buckets `10, 50, 100, 250, 500, 1000, 2500, 5000`). |
+| `proxynoid_github_ip_refresh_total` | counter | `result` | GitHub Actions IP range refresh attempts. |
+| `proxynoid_policy_reloads_total` | counter | `result` | Successful and failed policy hot-reloads. |
 
 ## Hot reload
 
@@ -195,6 +208,32 @@ The proxy exposes two probe endpoints. Both bypass auth, policy, and the audit f
 If the new file fails schema validation, the previous policy stays in force and the proxy logs `{"event":"policy.reload_failed","error":"..."}`. Operators typically: edit the file, watch the audit feed for the `policy.reloaded` event, then move on.
 
 Set `POLICY_RELOAD_INTERVAL=0` to disable watching entirely (e.g. when shipping `policies.yml` immutably with the container image).
+
+## Dry-run mode
+
+`POLICY_AUDIT_ONLY=1` puts the proxy in audit-only mode: requests that would normally be denied by policy are forwarded upstream anyway, with the audit log carrying `"allowed": true, "would_deny": true, "audit_only_reason": "policy.mismatch"`. Use this when rolling out a tightened policy:
+
+1. Deploy with the new `policies.yml` and `POLICY_AUDIT_ONLY=1`.
+2. Watch the audit feed (or `proxynoid_requests_total{outcome="audit_only"}` in Prometheus) for events you didn't expect.
+3. Either fix the policy or accept the new behavior, then unset `POLICY_AUDIT_ONLY` and restart.
+
+Authentication, IP allowlist, and rate limiting are still enforced in audit-only mode — only `policy.mismatch` denials are converted into forwards.
+
+## Running with Docker
+
+A multi-stage `Dockerfile` is included. The runtime image runs Puma as an unprivileged user on port `9292` and has a built-in healthcheck against `/healthz`.
+
+```bash
+# Build
+docker build -t proxynoid .
+
+# Or use the compose file for local development
+docker compose up
+```
+
+`docker-compose.yml` mounts `config/policies.yml` from your host so you can edit policies and watch hot-reload in action. Provide your `.env` file at the project root.
+
+Published images are available at `ghcr.io/<owner>/proxynoid:<tag>` once a `v*` tag is pushed (handled by `.github/workflows/release.yml`).
 
 ## Logging
 

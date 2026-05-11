@@ -1,0 +1,16 @@
+services:
+  proxynoid:
+    build: .
+    image: proxynoid:dev
+    ports:
+      - "9292:9292"
+    env_file:
+      - .env
+    volumes:
+      - ./config/policies.yml:/app/config/policies.yml:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:9292/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
